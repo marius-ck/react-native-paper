@@ -4,8 +4,7 @@ import { cubicBezier } from 'react-native-reanimated';
 import type { CSSTransitionProperties } from 'react-native-reanimated';
 
 import { NavigationRailTokens } from './tokens';
-import type { EasingConfig } from '../../theme/types';
-import type { InternalTheme } from '../../types';
+import type { EasingConfig, InternalTheme } from '../../theme/types';
 
 const { rail, colors } = NavigationRailTokens;
 

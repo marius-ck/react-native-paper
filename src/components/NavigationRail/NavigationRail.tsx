@@ -18,8 +18,8 @@ import { clampExpandedWidth, getTransition } from './utils';
 import { useInternalTheme } from '../../core/theming';
 import { useReduceMotion } from '../../theme/accessibility/ReduceMotionContext';
 import { tokens } from '../../theme/tokens';
+import type { ThemeProp } from '../../theme/types';
 import { resolveCornerRadius } from '../../theme/utils/shape';
-import type { ThemeProp } from '../../types';
 
 export type Props = {
   /**
