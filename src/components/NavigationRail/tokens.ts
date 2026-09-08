@@ -23,6 +23,7 @@ const rail = {
 const item = {
   iconSize: 24,
   indicatorShape: 'full',
+  badgeInset: 8,
   collapsed: {
     minHeight: 64,
     indicatorWidth: 56,
@@ -40,13 +41,14 @@ const item = {
 } as const satisfies {
   iconSize: number;
   indicatorShape: ShapeToken;
+  badgeInset: number;
   collapsed: Record<string, number | TypescaleKey>;
   expanded: Record<string, number | TypescaleKey>;
 };
 
 const colors = {
   container: 'surface',
-  modalContainer: 'surfaceContainer',
+  expandedContainer: 'surfaceContainer',
   activeIcon: 'onSecondaryContainer',
   activeLabel: 'secondary',
   activeExpandedLabel: 'onSecondaryContainer',

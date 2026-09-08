@@ -1,22 +1,24 @@
 import * as React from 'react';
-import { StyleSheet } from 'react-native';
-import type { ViewStyle } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
-import { cubicBezier } from 'react-native-reanimated';
-import type { AnimatedStyle } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
 import NavigationRail from './NavigationRail';
 import type { Props as NavigationRailProps } from './NavigationRail';
 import { NavigationRailTokens } from './tokens';
-import { clampExpandedWidth } from './utils';
+import { clampExpandedWidth, getTransition } from './utils';
 import { useLocale } from '../../core/locale';
 import { useInternalTheme } from '../../core/theming';
+import { useReduceMotion } from '../../theme/accessibility/ReduceMotionContext';
+import { tokens } from '../../theme/tokens';
 import { resolveCornerRadius } from '../../theme/utils/shape';
-import Modal from '../Modal';
+import { addEventListener } from '../../utils/addEventListener';
+import { BackHandler } from '../../utils/BackHandler/BackHandler';
+import Surface from '../Surface';
 
 export type Props = Omit<
   NavigationRailProps,
-  'expanded' | 'containerColor' | 'style'
+  'expanded' | 'overlay' | 'onDismiss' | 'containerColor' | 'style'
 > & {
   /**
    * Whether the modal rail is visible.
@@ -27,7 +29,8 @@ export type Props = Omit<
    */
   onDismiss?: () => void;
   /**
-   * Determines whether tapping the scrim dismisses the rail.
+   * Determines whether tapping the scrim or pressing the hardware back
+   * button dismisses the rail.
    */
   dismissable?: boolean;
   /**
@@ -38,11 +41,15 @@ export type Props = Omit<
 };
 
 const { rail, colors } = NavigationRailTokens;
+const scrimAlpha = tokens.md.sys.scrim.alpha;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /**
  * An expanded navigation rail shown above the content with a scrim, for
- * layouts where the rail is not permanently visible. Wrap it in a `Portal`
- * to render above other components.
+ * layouts where the rail is not permanently visible. Slides in from the
+ * start edge and out again on dismiss. Wrap it in a `Portal` to render above
+ * other components.
  *
  * ## Usage
  * ```js
@@ -74,9 +81,10 @@ const { rail, colors } = NavigationRailTokens;
 const NavigationRailModal = ({
   visible,
   onDismiss,
-  dismissable,
-  overlayAccessibilityLabel,
+  dismissable = true,
+  overlayAccessibilityLabel = 'Close navigation rail',
   expandedWidth = rail.expandedMinWidth,
+  animated = true,
   style,
   testID = 'navigation-rail-modal',
   theme: themeOverrides,
@@ -84,64 +92,138 @@ const NavigationRailModal = ({
 }: Props) => {
   const theme = useInternalTheme(themeOverrides);
   const { direction } = useLocale();
+  const reduceMotion = useReduceMotion();
+  const [mounted, setMounted] = React.useState(visible);
   const [shown, setShown] = React.useState(false);
+
+  if (visible && !mounted) {
+    setMounted(true);
+  }
+
+  const { duration, easing } = theme.motion;
+  const enter = {
+    duration: duration.medium4,
+    easing: easing.emphasizedDecelerate,
+  };
+  const exit = {
+    duration: duration.short4,
+    easing: easing.emphasizedAccelerate,
+  };
+  const motion = { ...(shown ? enter : exit), instant: !animated };
 
   React.useEffect(() => {
     const timeout = setTimeout(() => setShown(visible), 0);
     return () => clearTimeout(timeout);
   }, [visible]);
 
+  React.useEffect(() => {
+    if (visible || !mounted) return undefined;
+    const timeout = setTimeout(
+      () => setMounted(false),
+      animated ? exit.duration : 0
+    );
+    return () => clearTimeout(timeout);
+  }, [visible, mounted, animated, exit.duration]);
+
+  React.useEffect(() => {
+    if (!visible || !dismissable) return undefined;
+    const subscription = addEventListener(
+      BackHandler,
+      'hardwareBackPress',
+      () => {
+        onDismiss?.();
+        return true;
+      }
+    );
+    return () => subscription.remove();
+  }, [visible, dismissable, onDismiss]);
+
+  if (!mounted) {
+    return null;
+  }
+
   const width = clampExpandedWidth(expandedWidth);
   const offscreen = direction === 'rtl' ? width : -width;
-
-  // Duration follows the Modal's fade, which `Surface` applies last.
-  const slideStyle: AnimatedStyle<ViewStyle> = {
-    transform: [{ translateX: shown ? 0 : offscreen }],
-    transitionProperty: 'transform',
-    transitionTimingFunction: cubicBezier(
-      ...(shown
-        ? theme.motion.easing.emphasizedDecelerate
-        : theme.motion.easing.emphasizedAccelerate)
-    ),
-  };
+  const endRadius = resolveCornerRadius(theme, rail.modalShape);
 
   return (
-    <Modal
-      visible={visible}
-      onDismiss={onDismiss}
-      dismissable={dismissable}
-      overlayAccessibilityLabel={overlayAccessibilityLabel}
-      contentBackgroundColor={theme.colors[colors.modalContainer]}
-      contentElevation={rail.modalElevation}
-      contentBorderRadius={resolveCornerRadius(theme, rail.modalShape)}
-      style={styles.wrapper}
-      contentContainerStyle={[styles.content, slideStyle]}
-      theme={theme}
+    <Animated.View
+      style={StyleSheet.absoluteFill}
+      pointerEvents={visible ? 'auto' : 'none'}
+      aria-modal
+      aria-live="polite"
+      onAccessibilityEscape={onDismiss}
       testID={testID}
     >
-      <NavigationRail
-        {...rest}
-        expanded
-        expandedWidth={width}
-        containerColor="transparent"
-        style={style}
-        theme={theme}
-        testID={`${testID}-rail`}
+      <AnimatedPressable
+        onPress={dismissable ? onDismiss : undefined}
+        disabled={!dismissable}
+        role="button"
+        aria-label={overlayAccessibilityLabel}
+        importantForAccessibility="no"
+        style={[
+          StyleSheet.absoluteFill,
+          shown ? styles.scrim : styles.hidden,
+          { backgroundColor: theme.colors.scrim },
+          getTransition(theme, ['opacity'], motion),
+        ]}
+        testID={`${testID}-backdrop`}
       />
-    </Modal>
+      <Surface
+        elevation={rail.modalElevation}
+        backgroundColor={theme.colors[colors.expandedContainer]}
+        borderTopEndRadius={endRadius}
+        borderBottomEndRadius={endRadius}
+        transitionDuration={animated ? motion.duration : 0}
+        style={[
+          styles.panel,
+          { width },
+          reduceMotion
+            ? shown
+              ? styles.shown
+              : styles.hidden
+            : { transform: [{ translateX: shown ? 0 : offscreen }] },
+          getTransition(
+            theme,
+            [reduceMotion ? 'opacity' : 'transform'],
+            motion
+          ),
+        ]}
+        theme={theme}
+        testID={`${testID}-surface`}
+      >
+        <NavigationRail
+          {...rest}
+          expanded
+          expandedWidth={width}
+          animated={animated}
+          containerColor="transparent"
+          style={style}
+          theme={theme}
+          testID={`${testID}-rail`}
+        />
+      </Surface>
+    </Animated.View>
   );
 };
 
 NavigationRailModal.displayName = 'NavigationRail.Modal';
 
 const styles = StyleSheet.create({
-  wrapper: {
-    marginTop: 0,
-    marginBottom: 0,
-    alignItems: 'flex-start',
+  panel: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    start: 0,
   },
-  content: {
-    flex: 1,
+  scrim: {
+    opacity: scrimAlpha,
+  },
+  shown: {
+    opacity: 1,
+  },
+  hidden: {
+    opacity: 0,
   },
 });
 

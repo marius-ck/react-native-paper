@@ -14,9 +14,9 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 
-import { ExpandedContext } from './context';
+import { NavigationRailContext } from './context';
 import { NavigationRailTokens } from './tokens';
-import { resolveItemColors } from './utils';
+import { getTransition, resolveItemColors } from './utils';
 import { useInternalTheme } from '../../core/theming';
 import { useReduceMotion } from '../../theme/accessibility/ReduceMotionContext';
 import { tokens } from '../../theme/tokens';
@@ -82,7 +82,16 @@ export type Props = {
   theme?: ThemeProp;
 };
 
-const { item } = NavigationRailTokens;
+const { rail, item } = NavigationRailTokens;
+
+// Badges hang off the icon's trailing edge, far enough out to keep
+// `badgeInset` clear of the collapsed indicator's edge.
+const badgeEnd = -(
+  item.collapsed.indicatorWidth -
+  item.expanded.leading -
+  item.iconSize -
+  item.badgeInset
+);
 const { opacity: stateOpacity, focusIndicator } = tokens.md.sys.state;
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion
@@ -90,7 +99,8 @@ const webNoOutline = { outline: 'none' } as unknown as ViewStyle;
 
 /**
  * A destination inside a `NavigationRail`. Renders as a stacked icon and
- * label in the collapsed rail and as a full-width row in the expanded rail.
+ * label in the collapsed rail and as a full-width row in the expanded rail,
+ * morphing between the two when the rail expands or collapses.
  *
  * ## Usage
  * ```js
@@ -126,16 +136,50 @@ const NavigationRailItem = ({
   theme: themeOverrides,
 }: Props) => {
   const theme = useInternalTheme(themeOverrides);
-  const expanded = React.useContext(ExpandedContext);
+  const { expanded, expandedWidth, animated } = React.useContext(
+    NavigationRailContext
+  );
   const reduceMotion = useReduceMotion();
   const [focused, setFocused] = React.useState(false);
 
-  const colors = resolveItemColors({ theme, active, expanded });
+  const colors = resolveItemColors({ theme, active });
   const indicatorRadius = resolveCornerRadius(theme, item.indicatorShape);
   const contentOpacity = disabled
     ? stateOpacity.disabled
     : stateOpacity.enabled;
   const hasLabel = !!label;
+  const stacked = hasLabel && !expanded;
+
+  // Collapsed labeled items center the indicator + label block in the min height.
+  const height = stacked
+    ? item.collapsed.minHeight
+    : item.expanded.indicatorHeight;
+  const pillHeight = stacked
+    ? item.collapsed.indicatorHeight
+    : item.expanded.indicatorHeight;
+  const labelBlock =
+    theme.fonts[item.collapsed.labelTypescale].lineHeight +
+    item.collapsed.iconLabelGap;
+  const pillTop = stacked ? (height - pillHeight - labelBlock) / 2 : 0;
+  // Fixed label widths keep text measured once; the item clips the overflow.
+  const rowLabelWidth =
+    expandedWidth -
+    2 * rail.itemHorizontalPadding -
+    item.expanded.leading -
+    item.iconSize -
+    item.expanded.iconLabelGap -
+    item.expanded.trailing;
+
+  const layoutTransition = getTransition(theme, ['height', 'paddingTop'], {
+    instant: !animated || reduceMotion,
+  });
+  const fadeTransition = getTransition(theme, ['opacity'], {
+    instant: !animated,
+  });
+  const fade = (shown: boolean) => [
+    shown ? styles.shown : styles.hidden,
+    fadeTransition,
+  ];
 
   const selection = useSharedValue(active ? 1 : 0);
   const pressed = useSharedValue(false);
@@ -143,10 +187,11 @@ const NavigationRailItem = ({
 
   React.useEffect(() => {
     const target = active ? 1 : 0;
-    selection.value = reduceMotion
-      ? target
-      : withSpring(target, toRawSpring(theme.motion.spring.fast.spatial));
-  }, [active, reduceMotion, theme, selection]);
+    selection.value =
+      !animated || reduceMotion
+        ? target
+        : withSpring(target, toRawSpring(theme.motion.spring.fast.spatial));
+  }, [active, animated, reduceMotion, theme, selection]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
     opacity: selection.value,
@@ -165,189 +210,202 @@ const NavigationRailItem = ({
     if (!disabled && isKeyboardFocusEvent(e)) setFocused(true);
   };
 
+  const dot = typeof badge === 'boolean';
   const badgeNode =
-    badge === false ? null : (
-      <Badge visible style={styles.badge}>
-        {typeof badge === 'boolean' ? undefined : badge}
-      </Badge>
-    );
+    badge === false ? null : <Badge visible>{dot ? undefined : badge}</Badge>;
 
-  const iconNode = (
-    <Icon
-      source={active ? (activeIcon ?? icon) : icon}
-      size={item.iconSize}
-      color={colors.icon}
-    />
-  );
-
-  const labelNode = hasLabel ? (
+  const renderLabel = (row: boolean) => (
     <Text
       variant={
-        expanded ? item.expanded.labelTypescale : item.collapsed.labelTypescale
+        row ? item.expanded.labelTypescale : item.collapsed.labelTypescale
       }
       selectable={false}
-      numberOfLines={expanded ? 1 : 2}
+      numberOfLines={1}
+      ellipsizeMode={row ? 'clip' : 'tail'}
       maxFontSizeMultiplier={labelMaxFontSizeMultiplier}
-      style={[
-        expanded ? styles.labelExpanded : styles.labelCollapsed,
-        { color: colors.label },
-      ]}
-      testID={`${testID}-label`}
+      style={{ color: row ? colors.expandedLabel : colors.label }}
+      testID={`${testID}-label${row ? '-expanded' : ''}`}
     >
       {label}
     </Text>
-  ) : null;
-
-  const indicatorNode = (
-    <>
-      <Animated.View
-        style={[
-          styles.fill,
-          { backgroundColor: colors.indicator, borderRadius: indicatorRadius },
-          indicatorStyle,
-        ]}
-        testID={`${testID}-indicator`}
-      />
-      <Animated.View
-        style={[
-          styles.fill,
-          { backgroundColor: colors.stateLayer, borderRadius: indicatorRadius },
-          stateLayerStyle,
-        ]}
-      />
-      {focused ? (
-        <View
-          style={[
-            styles.fill,
-            styles.focusRing,
-            {
-              borderColor: colors.focusIndicator,
-              borderRadius: indicatorRadius + focusIndicator.outerOffset,
-            },
-          ]}
-        />
-      ) : null}
-    </>
   );
 
   return (
-    <TouchableRipple
-      borderless
-      rippleColor="transparent"
-      disabled={disabled}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      onPressIn={() => {
-        pressed.value = true;
-      }}
-      onPressOut={() => {
-        pressed.value = false;
-      }}
-      onHoverIn={() => {
-        hovered.value = true;
-      }}
-      onHoverOut={() => {
-        hovered.value = false;
-      }}
-      onFocus={onFocus}
-      onBlur={() => setFocused(false)}
-      role="tab"
-      aria-selected={active}
-      aria-disabled={disabled}
-      aria-label={ariaLabel}
-      testID={testID}
-      style={[
-        expanded
-          ? [styles.expandedItem, { borderRadius: indicatorRadius }]
-          : [styles.collapsedItem, hasLabel && styles.collapsedItemLabeled],
-        Platform.OS === 'web' ? webNoOutline : null,
-        style,
-      ]}
-      theme={theme}
+    <Animated.View
+      style={[{ height, paddingTop: pillTop }, layoutTransition, style]}
     >
-      {expanded ? (
-        <View style={[styles.row, { opacity: contentOpacity }]}>
-          {indicatorNode}
-          {iconNode}
-          {labelNode}
-          {badgeNode}
-        </View>
-      ) : (
-        <View style={[styles.column, { opacity: contentOpacity }]}>
-          <View
+      <TouchableRipple
+        borderless
+        rippleColor="transparent"
+        disabled={disabled}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        onPressIn={() => {
+          pressed.value = true;
+        }}
+        onPressOut={() => {
+          pressed.value = false;
+        }}
+        onHoverIn={() => {
+          hovered.value = true;
+        }}
+        onHoverOut={() => {
+          hovered.value = false;
+        }}
+        onFocus={onFocus}
+        onBlur={() => setFocused(false)}
+        role="tab"
+        aria-selected={active}
+        aria-disabled={disabled}
+        aria-label={ariaLabel}
+        testID={testID}
+        style={[styles.touchable, Platform.OS === 'web' ? webNoOutline : null]}
+        theme={theme}
+      >
+        <Animated.View
+          style={[
+            styles.pill,
+            { height: pillHeight, opacity: contentOpacity },
+            layoutTransition,
+          ]}
+        >
+          <Animated.View
             style={[
-              styles.collapsedIndicator,
-              hasLabel && styles.collapsedIndicatorLabeled,
+              styles.fill,
+              {
+                backgroundColor: colors.indicator,
+                borderRadius: indicatorRadius,
+              },
+              indicatorStyle,
             ]}
-          >
-            {indicatorNode}
-            {iconNode}
-            <View style={styles.badgeAnchor}>{badgeNode}</View>
+            testID={`${testID}-indicator`}
+          />
+          <Animated.View
+            style={[
+              styles.fill,
+              {
+                backgroundColor: colors.stateLayer,
+                borderRadius: indicatorRadius,
+              },
+              stateLayerStyle,
+            ]}
+          />
+          {focused ? (
+            <View
+              style={[
+                styles.fill,
+                styles.focusRing,
+                {
+                  borderColor: colors.focusIndicator,
+                  borderRadius: indicatorRadius + focusIndicator.outerOffset,
+                },
+              ]}
+            />
+          ) : null}
+          <View style={styles.iconAnchor}>
+            <Icon
+              source={active ? (activeIcon ?? icon) : icon}
+              size={item.iconSize}
+              color={colors.icon}
+            />
+            {badgeNode ? (
+              <Animated.View
+                aria-hidden={expanded}
+                style={[styles.iconBadge, ...fade(!expanded)]}
+              >
+                {badgeNode}
+              </Animated.View>
+            ) : null}
           </View>
-          {labelNode}
-        </View>
-      )}
-    </TouchableRipple>
+          {hasLabel ? (
+            <>
+              <Animated.View
+                aria-hidden={expanded}
+                style={[styles.stackedLabel, ...fade(!expanded)]}
+              >
+                {renderLabel(false)}
+              </Animated.View>
+              <Animated.View
+                aria-hidden={!expanded}
+                style={[
+                  styles.rowLabel,
+                  { width: rowLabelWidth },
+                  ...fade(expanded),
+                ]}
+              >
+                {renderLabel(true)}
+              </Animated.View>
+            </>
+          ) : null}
+          {badgeNode ? (
+            <Animated.View
+              aria-hidden={!expanded}
+              style={[styles.rowBadge, ...fade(expanded)]}
+            >
+              {badgeNode}
+            </Animated.View>
+          ) : null}
+        </Animated.View>
+      </TouchableRipple>
+    </Animated.View>
   );
 };
 
 NavigationRailItem.displayName = 'NavigationRail.Item';
 
 const styles = StyleSheet.create({
-  collapsedItem: {
-    width: item.collapsed.indicatorWidth,
-    justifyContent: 'center',
-  },
-  collapsedItemLabeled: {
-    width: '100%',
-    minHeight: item.collapsed.minHeight,
-  },
-  expandedItem: {
-    height: item.expanded.indicatorHeight,
-  },
-  column: {
-    alignItems: 'center',
-    pointerEvents: 'none',
-  },
-  row: {
+  touchable: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingStart: item.expanded.leading,
-    paddingEnd: item.expanded.trailing,
-    gap: item.expanded.iconLabelGap,
-    pointerEvents: 'none',
   },
-  collapsedIndicator: {
-    width: item.collapsed.indicatorWidth,
-    height: item.collapsed.indicatorWidth,
-    alignItems: 'center',
+  pill: {
     justifyContent: 'center',
-  },
-  collapsedIndicatorLabeled: {
-    height: item.collapsed.indicatorHeight,
+    paddingStart: item.expanded.leading,
+    pointerEvents: 'none',
   },
   fill: {
     ...StyleSheet.absoluteFill,
+  },
+  shown: {
+    opacity: 1,
+  },
+  hidden: {
+    opacity: 0,
   },
   focusRing: {
     margin: -focusIndicator.outerOffset,
     borderWidth: focusIndicator.thickness,
   },
-  labelCollapsed: {
+  stackedLabel: {
+    position: 'absolute',
+    top: '100%',
+    start: 0,
+    width: item.collapsed.indicatorWidth,
     marginTop: item.collapsed.iconLabelGap,
-    textAlign: 'center',
+    alignItems: 'center',
   },
-  labelExpanded: {
-    flex: 1,
-  },
-  badge: {
-    alignSelf: 'center',
-  },
-  badgeAnchor: {
+  rowLabel: {
     position: 'absolute',
     top: 0,
-    start: (item.collapsed.indicatorWidth + item.iconSize) / 2 - 4,
+    bottom: 0,
+    start: item.expanded.leading + item.iconSize + item.expanded.iconLabelGap,
+    justifyContent: 'center',
+  },
+  iconAnchor: {
+    alignSelf: 'flex-start',
+  },
+  iconBadge: {
+    position: 'absolute',
+    top: 0,
+    end: badgeEnd,
+    alignItems: 'flex-end',
+  },
+  rowBadge: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    end: item.expanded.trailing,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
   },
 });
 

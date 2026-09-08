@@ -1,21 +1,24 @@
 import * as React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import type { ColorValue, StyleProp, ViewStyle } from 'react-native';
 
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import type { AnimatedStyle } from 'react-native-reanimated';
 
-import { ExpandedContext } from './context';
+import { NavigationRailContext } from './context';
 import { NavigationRailTokens } from './tokens';
 import type { Alignment } from './tokens';
-import { clampExpandedWidth } from './utils';
+import { clampExpandedWidth, getTransition } from './utils';
 import { useInternalTheme } from '../../core/theming';
 import { useReduceMotion } from '../../theme/accessibility/ReduceMotionContext';
-import { toRawSpring } from '../../theme/tokens/sys/motion';
+import { tokens } from '../../theme/tokens';
+import { resolveCornerRadius } from '../../theme/utils/shape';
 import type { ThemeProp } from '../../types';
 
 export type Props = {
@@ -41,7 +44,21 @@ export type Props = {
    */
   header?: React.ReactNode;
   /**
-   * Container color override. Defaults to `theme.colors.surface`.
+   * Whether the expanded rail floats above the content behind a scrim instead
+   * of pushing it. The rail keeps its collapsed footprint in the layout.
+   */
+  overlay?: boolean;
+  /**
+   * Called when the scrim is pressed. Only used with `overlay`.
+   */
+  onDismiss?: () => void;
+  /**
+   * Whether expanding and collapsing is animated. Defaults to `true`.
+   */
+  animated?: boolean;
+  /**
+   * Container color override. Defaults to `theme.colors.surface` when
+   * collapsed and `theme.colors.surfaceContainer` when expanded.
    */
   containerColor?: ColorValue;
   style?: StyleProp<AnimatedStyle<ViewStyle>>;
@@ -56,6 +73,9 @@ export type Props = {
 };
 
 const { rail, colors } = NavigationRailTokens;
+const scrimAlpha = tokens.md.sys.scrim.alpha;
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const justifyContent = {
   top: 'flex-start',
@@ -84,8 +104,17 @@ const justifyContent = {
  *         expanded={expanded}
  *         header={
  *           <>
- *             <IconButton icon="menu" onPress={() => setExpanded((e) => !e)} />
- *             <FAB icon="pencil" onPress={() => {}} />
+ *             <IconButton
+ *               animated
+ *               icon={expanded ? 'menu-open' : 'menu'}
+ *               onPress={() => setExpanded((e) => !e)}
+ *             />
+ *             <FAB.Extended
+ *               icon="pencil"
+ *               label="Compose"
+ *               expanded={expanded}
+ *               onPress={() => {}}
+ *             />
  *           </>
  *         }
  *       >
@@ -118,10 +147,12 @@ const justifyContent = {
  *
  * ## Theming
  * Customize by overriding these `theme.colors` roles:
- * - `surface`: container
+ * - `surface`: collapsed container
+ * - `surfaceContainer`: expanded container
  * - `secondaryContainer` / `onSecondaryContainer`: active indicator / active icon
  * - `secondary`: active label (collapsed), focus indicator
  * - `onSurfaceVariant`: inactive icon and label
+ * - `scrim`: backdrop behind the floating rail (`overlay`)
  */
 const NavigationRail = ({
   children,
@@ -129,6 +160,9 @@ const NavigationRail = ({
   expandedWidth = rail.expandedMinWidth,
   alignment = 'top',
   header,
+  overlay = false,
+  onDismiss,
+  animated = true,
   containerColor,
   style,
   testID = 'navigation-rail',
@@ -136,74 +170,125 @@ const NavigationRail = ({
 }: Props) => {
   const theme = useInternalTheme(themeOverrides);
   const reduceMotion = useReduceMotion();
+  const { width: windowWidth } = useWindowDimensions();
 
-  const targetWidth = expanded
-    ? clampExpandedWidth(expandedWidth)
-    : rail.collapsedWidth;
-  const width = useSharedValue(targetWidth);
+  const targetWidth = clampExpandedWidth(expandedWidth);
+  const width = expanded ? targetWidth : rail.collapsedWidth;
+  const floating = overlay && expanded;
+  const endRadius = floating ? resolveCornerRadius(theme, rail.modalShape) : 0;
+  const backgroundColor =
+    containerColor ??
+    theme.colors[expanded ? colors.expandedContainer : colors.container];
 
-  React.useEffect(() => {
-    width.value = reduceMotion
-      ? targetWidth
-      : withSpring(
-          targetWidth,
-          toRawSpring(theme.motion.spring.default.spatial)
-        );
-  }, [targetWidth, reduceMotion, theme, width]);
+  const context = React.useMemo(
+    () => ({ expanded, expandedWidth: targetWidth, animated }),
+    [expanded, targetWidth, animated]
+  );
 
-  const widthStyle = useAnimatedStyle(() => ({ width: width.value }));
-
-  return (
+  const panel = (
     <Animated.View
       style={[
-        styles.container,
-        { backgroundColor: containerColor ?? theme.colors[colors.container] },
-        widthStyle,
+        styles.panel,
+        overlay && styles.floating,
+        {
+          width,
+          backgroundColor,
+          borderTopEndRadius: endRadius,
+          borderBottomEndRadius: endRadius,
+        },
+        getTransition(
+          theme,
+          [
+            'width',
+            'borderTopEndRadius',
+            'borderBottomEndRadius',
+            // Reanimated can't interpolate PlatformColor / DynamicColorIOS.
+            ...(typeof backgroundColor === 'string'
+              ? (['backgroundColor'] as const)
+              : []),
+          ],
+          { instant: !animated || reduceMotion }
+        ),
         style,
       ]}
       testID={testID}
     >
-      <View style={[styles.content, { width: targetWidth }]}>
-        {header ? (
-          <View style={[styles.header, expanded && styles.headerExpanded]}>
-            {header}
-          </View>
-        ) : null}
-        <ScrollView
-          style={styles.items}
-          contentContainerStyle={[
-            styles.itemsContent,
-            expanded ? styles.itemsExpanded : styles.itemsCollapsed,
-            { justifyContent: justifyContent[alignment] },
-          ]}
-          showsVerticalScrollIndicator={false}
-          testID={`${testID}-items`}
-        >
-          <ExpandedContext.Provider value={expanded}>
-            {children}
-          </ExpandedContext.Provider>
-        </ScrollView>
-      </View>
+      {header ? <View style={styles.header}>{header}</View> : null}
+      <ScrollView
+        style={styles.items}
+        contentContainerStyle={[
+          styles.itemsContent,
+          { justifyContent: justifyContent[alignment] },
+        ]}
+        showsVerticalScrollIndicator={false}
+        testID={`${testID}-items`}
+      >
+        <NavigationRailContext.Provider value={context}>
+          {children}
+        </NavigationRailContext.Provider>
+      </ScrollView>
     </Animated.View>
+  );
+
+  if (!overlay) {
+    return panel;
+  }
+
+  return (
+    <View style={styles.anchor}>
+      <AnimatedPressable
+        onPress={onDismiss}
+        role="button"
+        aria-label="Close navigation rail"
+        importantForAccessibility="no"
+        style={[
+          styles.scrim,
+          expanded ? styles.scrimShown : styles.scrimHidden,
+          { width: windowWidth, backgroundColor: theme.colors.scrim },
+          getTransition(theme, ['opacity'], { instant: !animated }),
+        ]}
+        testID={`${testID}-scrim`}
+      />
+      {panel}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  anchor: {
+    width: rail.collapsedWidth,
     height: '100%',
+    zIndex: 1,
+  },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    start: 0,
+  },
+  scrimShown: {
+    opacity: scrimAlpha,
+    pointerEvents: 'auto',
+  },
+  scrimHidden: {
+    opacity: 0,
+    pointerEvents: 'none',
+  },
+  panel: {
+    height: '100%',
+    paddingTop: rail.topSpace,
     overflow: 'hidden',
   },
-  content: {
-    flex: 1,
-    paddingTop: rail.topSpace,
+  floating: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    start: 0,
   },
   header: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: rail.itemSpace,
     marginBottom: rail.headerSpace,
-  },
-  headerExpanded: {
-    alignItems: 'flex-start',
     paddingHorizontal: rail.itemHorizontalPadding,
   },
   items: {
@@ -212,11 +297,6 @@ const styles = StyleSheet.create({
   itemsContent: {
     flexGrow: 1,
     gap: rail.itemSpace,
-  },
-  itemsCollapsed: {
-    alignItems: 'center',
-  },
-  itemsExpanded: {
     paddingHorizontal: rail.itemHorizontalPadding,
   },
 });

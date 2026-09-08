@@ -1,6 +1,10 @@
 import type { ColorValue } from 'react-native';
 
+import { cubicBezier } from 'react-native-reanimated';
+import type { CSSTransitionProperties } from 'react-native-reanimated';
+
 import { NavigationRailTokens } from './tokens';
+import type { EasingConfig } from '../../theme/types';
 import type { InternalTheme } from '../../types';
 
 const { rail, colors } = NavigationRailTokens;
@@ -8,6 +12,7 @@ const { rail, colors } = NavigationRailTokens;
 export type ItemColors = {
   icon: ColorValue;
   label: ColorValue;
+  expandedLabel: ColorValue;
   indicator: ColorValue;
   stateLayer: ColorValue;
   focusIndicator: ColorValue;
@@ -20,19 +25,16 @@ export type ItemColors = {
 export const resolveItemColors = ({
   theme,
   active = false,
-  expanded = false,
 }: {
   theme: InternalTheme;
   active?: boolean;
-  expanded?: boolean;
 }): ItemColors => {
   const c = theme.colors;
-  const activeLabel = expanded
-    ? colors.activeExpandedLabel
-    : colors.activeLabel;
   return {
     icon: c[active ? colors.activeIcon : colors.inactiveIcon],
-    label: c[active ? activeLabel : colors.inactiveLabel],
+    label: c[active ? colors.activeLabel : colors.inactiveLabel],
+    expandedLabel:
+      c[active ? colors.activeExpandedLabel : colors.inactiveLabel],
     indicator: c[colors.activeIndicator],
     stateLayer: c[colors.stateLayer],
     focusIndicator: c[colors.focusIndicator],
@@ -44,3 +46,21 @@ export const resolveItemColors = ({
  */
 export const clampExpandedWidth = (width: number): number =>
   Math.min(Math.max(width, rail.expandedMinWidth), rail.expandedMaxWidth);
+
+/**
+ * Rail motion as a CSS transition. Defaults to the 300ms emphasized curve used
+ * for expanding; the modal rail passes MD3 enter/exit durations and easings.
+ */
+export const getTransition = (
+  theme: InternalTheme,
+  properties: CSSTransitionProperties['transitionProperty'],
+  {
+    duration = theme.motion.duration.medium2,
+    easing = theme.motion.easing.emphasized,
+    instant = false,
+  }: { duration?: number; easing?: EasingConfig; instant?: boolean } = {}
+): CSSTransitionProperties => ({
+  transitionProperty: properties,
+  transitionDuration: instant ? 0 : duration,
+  transitionTimingFunction: cubicBezier(...easing),
+});

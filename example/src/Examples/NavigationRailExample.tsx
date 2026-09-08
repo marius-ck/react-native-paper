@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { StyleSheet, View } from 'react-native';
+import type { ViewStyle } from 'react-native';
 
 import {
   Button,
@@ -14,6 +15,8 @@ import {
   useTheme,
 } from 'react-native-paper';
 import type { NavigationRailProps } from 'react-native-paper';
+import Animated, { cubicBezier } from 'react-native-reanimated';
+import type { AnimatedStyle } from 'react-native-reanimated';
 
 type Alignment = NonNullable<NavigationRailProps['alignment']>;
 
@@ -43,12 +46,21 @@ const destinations = [
 const alignments: Alignment[] = ['top', 'center', 'bottom'];
 
 const NavigationRailExample = () => {
-  const { colors } = useTheme();
+  const { colors, motion } = useTheme();
   const [active, setActive] = React.useState('inbox');
   const [expanded, setExpanded] = React.useState(false);
   const [alignment, setAlignment] = React.useState<Alignment>('top');
   const [labeled, setLabeled] = React.useState(true);
+  const [overlay, setOverlay] = React.useState(false);
+  const [animated, setAnimated] = React.useState(true);
   const [modalVisible, setModalVisible] = React.useState(false);
+
+  const toggleStyle: AnimatedStyle<ViewStyle> = {
+    transform: [{ rotate: expanded ? '0deg' : '180deg' }],
+    transitionProperty: 'transform',
+    transitionDuration: animated ? motion.duration.medium2 : 0,
+    transitionTimingFunction: cubicBezier(...motion.easing.emphasized),
+  };
 
   const renderItems = () =>
     destinations.map(({ key, label, ...rest }) => (
@@ -68,14 +80,24 @@ const NavigationRailExample = () => {
       <NavigationRail
         expanded={expanded}
         alignment={alignment}
+        overlay={overlay}
+        animated={animated}
+        onDismiss={() => setExpanded(false)}
         header={
           <>
-            <IconButton
-              icon="menu"
-              aria-label="Toggle rail"
-              onPress={() => setExpanded((value) => !value)}
+            <Animated.View style={toggleStyle}>
+              <IconButton
+                icon="menu-open"
+                aria-label="Toggle rail"
+                onPress={() => setExpanded((value) => !value)}
+              />
+            </Animated.View>
+            <FAB.Extended
+              icon="pencil"
+              label="Compose"
+              expanded={expanded}
+              onPress={() => {}}
             />
-            <FAB icon="pencil" onPress={() => {}} />
           </>
         }
       >
@@ -92,6 +114,24 @@ const NavigationRailExample = () => {
             </View>
           )}
           onPress={() => setExpanded((value) => !value)}
+        />
+        <List.Item
+          title="Animated"
+          right={() => (
+            <View pointerEvents="none">
+              <Switch value={animated} />
+            </View>
+          )}
+          onPress={() => setAnimated((value) => !value)}
+        />
+        <List.Item
+          title="Overlay"
+          right={() => (
+            <View pointerEvents="none">
+              <Switch value={overlay} />
+            </View>
+          )}
+          onPress={() => setOverlay((value) => !value)}
         />
         <List.Item
           title="Labels"
@@ -124,6 +164,7 @@ const NavigationRailExample = () => {
           visible={modalVisible}
           onDismiss={() => setModalVisible(false)}
           alignment={alignment}
+          animated={animated}
           header={
             <IconButton
               icon="menu-open"
