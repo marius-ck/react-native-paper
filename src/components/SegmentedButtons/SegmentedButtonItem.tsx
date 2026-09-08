@@ -22,7 +22,7 @@ import {
 } from './utils';
 import { useInternalTheme } from '../../core/theming';
 import { useReduceMotion } from '../../theme/accessibility/ReduceMotionContext';
-import type { ThemeProp } from '../../types';
+import type { ThemeProp } from '../../theme/types';
 import type { IconSource } from '../Icon';
 import Icon from '../Icon';
 import TouchableRipple from '../TouchableRipple/TouchableRipple';
@@ -224,7 +224,7 @@ const SegmentedButtonItem = ({
         >
           {showCheckedIcon ? (
             <Animated.View
-              testID={`${testID}-check-icon`}
+              testID={testID ? `${testID}-check-icon` : undefined}
               style={[iconStyle, checkAnimatedStyle]}
             >
               <Icon source={'check'} size={iconSize} color={textColor} />
@@ -232,7 +232,7 @@ const SegmentedButtonItem = ({
           ) : null}
           {showIcon ? (
             <Animated.View
-              testID={`${testID}-icon`}
+              testID={testID ? `${testID}-icon` : undefined}
               style={[iconStyle, iconAnimatedStyle]}
             >
               <Icon source={icon} size={iconSize} color={textColor} />
@@ -244,7 +244,7 @@ const SegmentedButtonItem = ({
             selectable={false}
             numberOfLines={1}
             maxFontSizeMultiplier={labelMaxFontSizeMultiplier}
-            testID={`${testID}-label`}
+            testID={testID ? `${testID}-label` : undefined}
           >
             {label}
           </Text>

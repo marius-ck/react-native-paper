@@ -14,7 +14,7 @@ import type {
 import { getButtonColors, getButtonTouchableRippleStyle } from './utils';
 import type { ButtonMode } from './utils';
 import { useInternalTheme } from '../../core/theming';
-import type { ThemeProp } from '../../types';
+import type { ThemeProp } from '../../theme/types';
 import hasTouchHandler from '../../utils/hasTouchHandler';
 import ActivityIndicator from '../ActivityIndicator';
 import Icon from '../Icon';
@@ -184,7 +184,7 @@ const Button = ({
   uppercase: uppercaseProp,
   contentStyle,
   labelStyle,
-  testID = 'button',
+  testID,
   accessible,
   background,
   maxFontSizeMultiplier,
@@ -292,7 +292,7 @@ const Button = ({
     <Surface
       {...rest}
       ref={ref}
-      testID={`${testID}-container`}
+      testID={testID ? `${testID}-container` : undefined}
       backgroundColor={backgroundOpacity < 1 ? 'transparent' : backgroundColor}
       {...touchableStyle}
       style={[
@@ -342,7 +342,10 @@ const Button = ({
       >
         <View style={[styles.content, { opacity: textOpacity }, contentStyle]}>
           {icon && loading !== true ? (
-            <View style={iconStyle} testID={`${testID}-icon-container`}>
+            <View
+              style={iconStyle}
+              testID={testID ? `${testID}-icon-container` : undefined}
+            >
               <Icon
                 source={icon}
                 size={customLabelSize ?? iconSize}
@@ -369,7 +372,7 @@ const Button = ({
             variant="labelLarge"
             selectable={false}
             numberOfLines={1}
-            testID={`${testID}-text`}
+            testID={testID ? `${testID}-text` : undefined}
             style={[
               styles.label,
               isMode('text')

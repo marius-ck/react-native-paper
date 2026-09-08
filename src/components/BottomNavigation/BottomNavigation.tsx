@@ -13,7 +13,7 @@ import useLatestCallback from 'use-latest-callback';
 import BottomNavigationBar from './BottomNavigationBar';
 import BottomNavigationRouteScreen from './BottomNavigationRouteScreen';
 import { useInternalTheme } from '../../core/theming';
-import type { ThemeProp } from '../../types';
+import type { ThemeProp } from '../../theme/types';
 import useAnimatedValueArray from '../../utils/useAnimatedValueArray';
 import type { IconSource } from '../Icon';
 import type { Props as TouchableRippleProps } from '../TouchableRipple/TouchableRipple';
@@ -335,7 +335,7 @@ const BottomNavigation = <Route extends BaseRoute>({
   safeAreaInsets,
   labelMaxFontSizeMultiplier = 1,
   compact: compactProp,
-  testID = 'bottom-navigation',
+  testID,
   theme: themeOverrides,
   getLazy = ({ route }: { route: Route }) => route.lazy,
 }: Props<Route>) => {
@@ -579,7 +579,7 @@ const BottomNavigation = <Route extends BaseRoute>({
         safeAreaInsets={safeAreaInsets}
         labelMaxFontSizeMultiplier={labelMaxFontSizeMultiplier}
         compact={compact}
-        testID={`${testID}-bar`}
+        testID={testID ? `${testID}-bar` : undefined}
         theme={theme}
       />
     </View>

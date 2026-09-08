@@ -32,7 +32,7 @@ import useLatestCallback from 'use-latest-callback';
 import MenuItem from './MenuItem';
 import { useLocale } from '../../core/locale';
 import { useInternalTheme } from '../../core/theming';
-import type { Elevation, ThemeProp } from '../../types';
+import type { Elevation, ThemeProp } from '../../theme/types';
 import { addEventListener } from '../../utils/addEventListener';
 import { BackHandler } from '../../utils/BackHandler/BackHandler';
 import Portal from '../Portal/Portal';
@@ -186,7 +186,7 @@ const Menu = ({
   visible,
   statusBarHeight,
   overlayAccessibilityLabel = 'Close menu',
-  testID = 'menu',
+  testID,
   anchor,
   onDismiss,
   anchorPosition,
@@ -691,7 +691,7 @@ const Menu = ({
             style={[styles.wrapper, positionStyle, style]}
             pointerEvents={pointerEvents}
             onAccessibilityEscape={onDismiss}
-            testID={`${testID}-view`}
+            testID={testID ? `${testID}-view` : undefined}
           >
             <Animated.View
               pointerEvents={pointerEvents}
@@ -707,7 +707,7 @@ const Menu = ({
                   shadowMenuAnimationStyle,
                 ]}
                 elevation={elevation}
-                testID={`${testID}-surface`}
+                testID={testID ? `${testID}-surface` : undefined}
                 theme={theme}
               >
                 <Animated.View

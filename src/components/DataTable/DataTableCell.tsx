@@ -7,11 +7,14 @@ import type {
   GestureResponderEvent,
 } from 'react-native';
 
-import type { $RemoveChildren } from '../../types';
 import TouchableRipple from '../TouchableRipple/TouchableRipple';
+import type { Props as TouchableRippleProps } from '../TouchableRipple/TouchableRipple';
 import Text from '../Typography/Text';
 
-export type Props = $RemoveChildren<typeof TouchableRipple> & {
+export type Props = Omit<
+  React.PropsWithoutRef<TouchableRippleProps>,
+  'children'
+> & {
   /**
    * Content of the `DataTableCell`.
    */
@@ -108,7 +111,7 @@ const CellContent = ({
       style={textStyle}
       numberOfLines={1}
       maxFontSizeMultiplier={maxFontSizeMultiplier}
-      testID={`${testID}-text-container`}
+      testID={testID ? `${testID}-text-container` : undefined}
     >
       {children}
     </Text>
